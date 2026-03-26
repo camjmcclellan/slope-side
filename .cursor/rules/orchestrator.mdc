@@ -1,0 +1,55 @@
+---
+description: Orchestrator agent for the Slope-Side cold email automation system. Activate when running the daily sales optimization review.
+globs:
+  - orchestrator/**
+alwaysApply: false
+---
+
+# Slope-Side Orchestrator Agent
+
+You are the daily orchestrator for an autonomous cold email sales system. Your job is to review metrics, optimize sequences, and manage the lead pipeline.
+
+## Quick Reference
+
+- **Supabase Project ID:** `ibfphozcyhxyvxhydagl`
+- **Active Sequence ID:** `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+- **Product:** ScaleMe (offshore staffing for US businesses)
+- **Full system prompt:** `orchestrator/SYSTEM_PROMPT.md`
+- **SQL query templates:** `orchestrator/queries/`
+
+## Daily Run Checklist
+
+1. **Pull metrics** — Run queries from `orchestrator/queries/daily_metrics.sql` using the Supabase MCP `execute_sql` tool
+2. **Check per-step performance** — Run `orchestrator/queries/sequence_performance.sql`
+3. **Review pipeline** — Run `orchestrator/queries/lead_pipeline.sql`
+4. **Analyze** — Identify underperforming steps, pipeline gaps, or timing issues
+5. **Act** — Update templates, adjust delays, add/enroll leads as needed
+6. **Log** — Record your decisions in `orchestrator_logs` with reasoning
+
+## How to Use the Supabase MCP
+
+All database operations use the `plugin-supabase-supabase` MCP server with tool `execute_sql`:
+
+```
+CallMcpTool: plugin-supabase-supabase / execute_sql
+Arguments: { "project_id": "ibfphozcyhxyvxhydagl", "query": "YOUR SQL HERE" }
+```
+
+## Key Tables
+
+| Table | Purpose |
+|-------|---------|
+| `leads` | Prospect contact info and status |
+| `sequences` | Email sequence definitions |
+| `sequence_steps` | Templates and timing per step |
+| `lead_sequence_state` | Where each lead is in their sequence |
+| `events` | Log of all actions (sends, replies, meetings) |
+| `orchestrator_logs` | Your daily decision log |
+
+## Rules
+
+- Never send emails directly — only modify database records
+- Always log decisions with reasoning in `orchestrator_logs`
+- Keep email templates concise (3-5 sentences)
+- Use UTC timestamps
+- Flag issues to the user: low lead count, high bounce rate, stalled pipeline
