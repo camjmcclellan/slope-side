@@ -19,7 +19,7 @@
     .page { display: none; padding: 32px; }
     .page.active { display: block; }
 
-    /* Dashboard page */
+    /* Dashboard */
     .actions { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; }
     button { padding: 10px 22px; font-size: 14px; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 6px; font-weight: 500; }
     button:disabled { background: #93c5fd; cursor: not-allowed; }
@@ -33,11 +33,24 @@
     .success { background: #d1fae5; color: #065f46; }
     .error { background: #fee2e2; color: #991b1b; }
 
-    /* Leads table */
+    /* Tables */
     .table-wrap { overflow-x: auto; background: white; border: 1px solid #e5e7eb; border-radius: 8px; }
-    table { border-collapse: collapse; width: 100%; font-size: 13px; }
-    th { background: #f3f4f6; text-align: left; padding: 10px 14px; font-weight: 600; color: #374151; white-space: nowrap; border-bottom: 1px solid #e5e7eb; }
-    td { padding: 10px 14px; border-bottom: 1px solid #f3f4f6; color: #111827; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; table-layout: fixed; }
+    th {
+      background: #f3f4f6; text-align: left; padding: 10px 14px; font-weight: 600;
+      color: #374151; white-space: nowrap; border-bottom: 1px solid #e5e7eb;
+      position: relative; user-select: none; overflow: hidden;
+    }
+    th .th-inner { display: flex; align-items: center; gap: 6px; }
+    th .sort-arrows { display: flex; flex-direction: column; line-height: 1; cursor: pointer; color: #9ca3af; font-size: 10px; }
+    th .sort-arrows span { line-height: 1.1; }
+    th .sort-arrows .active-arrow { color: #2563eb; }
+    th .resizer {
+      position: absolute; right: 0; top: 0; width: 5px; height: 100%;
+      cursor: col-resize; user-select: none;
+    }
+    th .resizer:hover, th .resizer.resizing { background: #2563eb; opacity: 0.4; }
+    td { padding: 10px 14px; border-bottom: 1px solid #f3f4f6; color: #111827; overflow-wrap: break-word; word-break: break-word; white-space: normal; }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #f9fafb; }
   </style>
@@ -53,6 +66,7 @@
     <div class="tab active" onclick="showTab('dashboard', this)">Dashboard</div>
     <div class="tab" onclick="showTab('leads-page', this)">Leads</div>
     <div class="tab" onclick="showTab('history-page', this)">History</div>
+    <div class="tab" onclick="showTab('plan-page', this)">Plan</div>
   </div>
 
   <!-- Dashboard -->
@@ -60,7 +74,9 @@
     <div class="actions">
       <button id="btn" onclick="sendEmail()">Send Email to Random Lead</button>
       <button class="secondary" onclick="">Simulate 8am</button>
+      <button class="secondary" id="review-btn" onclick="runReview()">Run Morning Review</button>
       <span id="spinner">Generating &amp; sending...</span>
+      <span id="review-spinner" style="display:none;font-size:13px;color:#6b7280;">Running review...</span>
     </div>
 
     <div id="result">
@@ -78,25 +94,33 @@
       </div>
       <div id="status"></div>
     </div>
+
+    <div id="review-result" style="display:none;">
+      <div class="card">
+        <div class="label">Morning Review Log</div>
+        <div id="review-log" style="font-size:13px;font-family:monospace;color:#111827;white-space:pre-wrap;max-height:400px;overflow-y:auto;"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Leads -->
   <div id="leads-page" class="page">
     <div class="table-wrap">
-      <table id="leads-table">
-        <thead></thead>
-        <tbody></tbody>
-      </table>
+      <table id="leads-table"><thead></thead><tbody></tbody></table>
     </div>
   </div>
 
   <!-- History -->
   <div id="history-page" class="page">
     <div class="table-wrap">
-      <table id="history-table">
-        <thead></thead>
-        <tbody></tbody>
-      </table>
+      <table id="history-table"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- Plan -->
+  <div id="plan-page" class="page">
+    <div class="table-wrap">
+      <table id="plan-table"><thead></thead><tbody></tbody></table>
     </div>
   </div>
 
@@ -117,44 +141,143 @@
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById(id).classList.add('active');
       el.classList.add('active');
-      if (id === 'leads-page') loadLeads();
-      if (id === 'history-page') loadHistory();
+      if (id === 'leads-page') loadTable('leads-table', '/leads');
+      if (id === 'history-page') loadTable('history-table', '/history', 'No emails sent yet.');
+      if (id === 'plan-page') loadTable('plan-table', '/plan', 'No plan generated yet. Run Morning Review first.');
     }
 
-    // Leads table
-    async function loadLeads() {
-      const res = await fetch('/leads');
+    // Generic table loader with sort + resize
+    async function loadTable(tableId, url, emptyMsg = 'No data.') {
+      const res = await fetch(url);
       const rows = await res.json();
-      if (!rows.length) return;
-
-      const cols = Object.keys(rows[0]);
-      const thead = document.querySelector('#leads-table thead');
-      const tbody = document.querySelector('#leads-table tbody');
-
-      thead.innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
-      tbody.innerHTML = rows.map(row =>
-        '<tr>' + cols.map(c => `<td title="${row[c] ?? ''}">${row[c] ?? ''}</td>`).join('') + '</tr>'
-      ).join('');
-    }
-
-    // History table
-    async function loadHistory() {
-      const res = await fetch('/history');
-      const rows = await res.json();
-      const thead = document.querySelector('#history-table thead');
-      const tbody = document.querySelector('#history-table tbody');
+      const table = document.getElementById(tableId);
+      const thead = table.querySelector('thead');
+      const tbody = table.querySelector('tbody');
 
       if (!rows.length) {
         thead.innerHTML = '';
-        tbody.innerHTML = '<tr><td style="padding:20px;color:#6b7280;">No emails sent yet.</td></tr>';
+        tbody.innerHTML = `<tr><td style="padding:20px;color:#6b7280;">${emptyMsg}</td></tr>`;
         return;
       }
 
       const cols = Object.keys(rows[0]);
-      thead.innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
-      tbody.innerHTML = rows.map(row =>
-        '<tr>' + cols.map(c => `<td title="${row[c] ?? ''}">${row[c] ?? ''}</td>`).join('') + '</tr>'
-      ).join('');
+      let sortCol = null;
+      let sortDir = 1; // 1 = asc, -1 = desc
+      let data = [...rows];
+
+      function renderTable() {
+        // Header
+        thead.innerHTML = '<tr>' + cols.map((c, i) => `
+          <th style="width:160px;" data-col="${i}">
+            <div class="th-inner">
+              <span>${c}</span>
+              <span class="sort-arrows" data-col="${i}">
+                <span data-dir="asc">▲</span>
+                <span data-dir="desc">▼</span>
+              </span>
+            </div>
+            <div class="resizer" data-col="${i}"></div>
+          </th>`).join('') + '</tr>';
+
+        // Highlight active sort
+        if (sortCol !== null) {
+          const arrows = thead.querySelectorAll('.sort-arrows')[sortCol];
+          if (arrows) {
+            arrows.querySelector(`[data-dir="${sortDir === 1 ? 'asc' : 'desc'}"]`).classList.add('active-arrow');
+          }
+        }
+
+        // Body
+        tbody.innerHTML = data.map(row =>
+          '<tr>' + cols.map(c => `<td title="${row[c] ?? ''}">${row[c] ?? ''}</td>`).join('') + '</tr>'
+        ).join('');
+
+        attachSort();
+        attachResize();
+      }
+
+      function attachSort() {
+        thead.querySelectorAll('.sort-arrows').forEach(el => {
+          el.addEventListener('click', e => {
+            const col = parseInt(el.dataset.col);
+            const dir = e.target.dataset.dir;
+            if (!dir) return;
+            sortCol = col;
+            sortDir = dir === 'asc' ? 1 : -1;
+            data.sort((a, b) => {
+              const av = a[cols[col]] ?? '';
+              const bv = b[cols[col]] ?? '';
+              return av < bv ? -sortDir : av > bv ? sortDir : 0;
+            });
+            renderTable();
+          });
+        });
+      }
+
+      function attachResize() {
+        thead.querySelectorAll('.resizer').forEach(resizer => {
+          resizer.addEventListener('mousedown', e => {
+            e.preventDefault();
+            const th = resizer.closest('th');
+            const startX = e.pageX;
+            const startW = th.offsetWidth;
+            resizer.classList.add('resizing');
+
+            function onMove(e) {
+              th.style.width = Math.max(60, startW + e.pageX - startX) + 'px';
+            }
+            function onUp() {
+              resizer.classList.remove('resizing');
+              document.removeEventListener('mousemove', onMove);
+              document.removeEventListener('mouseup', onUp);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+          });
+        });
+      }
+
+      renderTable();
+    }
+
+    // Morning review
+    function runReview() {
+      const btn = document.getElementById('review-btn');
+      const spinner = document.getElementById('review-spinner');
+      const logEl = document.getElementById('review-log');
+      const resultEl = document.getElementById('review-result');
+
+      btn.disabled = true;
+      spinner.style.display = 'inline';
+      logEl.textContent = '';
+      resultEl.style.display = 'block';
+
+      const es = new EventSource('/review');
+
+      es.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'log') {
+          logEl.textContent += data.msg + '\n';
+          logEl.scrollTop = logEl.scrollHeight;
+        } else if (data.type === 'done') {
+          logEl.textContent += `\nDone. ${data.leads_scheduled} emails scheduled (A: ${data.variant_a_count}, B: ${data.variant_b_count}). History reviewed: ${data.history_reviewed}.`;
+          logEl.scrollTop = logEl.scrollHeight;
+          es.close();
+          btn.disabled = false;
+          spinner.style.display = 'none';
+        } else if (data.type === 'error') {
+          logEl.textContent += `\nERROR: ${data.msg}`;
+          es.close();
+          btn.disabled = false;
+          spinner.style.display = 'none';
+        }
+      };
+
+      es.onerror = () => {
+        es.close();
+        btn.disabled = false;
+        spinner.style.display = 'none';
+      };
     }
 
     // Send email

@@ -37,8 +37,34 @@ def init_db():
             receiver TEXT,
             subject TEXT,
             body TEXT,
+            prompt TEXT,
             sent_at TEXT,
             FOREIGN KEY (lead_id) REFERENCES leads(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS prompts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            variant TEXT,
+            system_instruction TEXT,
+            created_at TEXT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS plan (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lead_id INTEGER,
+            prompt_id INTEGER,
+            variant TEXT,
+            subject TEXT,
+            body TEXT,
+            scheduled_at TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT,
+            FOREIGN KEY (lead_id) REFERENCES leads(id),
+            FOREIGN KEY (prompt_id) REFERENCES prompts(id)
         )
     """)
 
