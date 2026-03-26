@@ -13,14 +13,16 @@ Database-driven cold email automation system with an AI orchestrator that optimi
 ┌──────────────────────▼───────────────────────────────────────┐
 │                  Supabase (Source of Truth)                   │
 │  leads │ sequences │ sequence_steps │ lead_sequence_state    │
-│  events │ orchestrator_logs                                  │
+│  email_accounts │ emails │ jobs │ events │ orchestrator_logs │
 └──────────────────────▲───────────────────────────────────────┘
                        │ queries/updates
 ┌──────────────────────┴───────────────────────────────────────┐
-│                   n8n Execution Layer                         │
-│  WF1: Cold Email Sender (every 15 min)                       │
-│  WF2: Reply Watcher + Auto-Responder (Gmail trigger)         │
-│  WF3: Meeting Booker (webhook)                               │
+│                 Code Execution Layer                          │
+│  Job Runner: polls `jobs` table, executes pending tasks      │
+│  - send_email: resolve templates → send via Gmail API → log  │
+│  - check_replies: poll Gmail → match threads → store inbound │
+│  - classify_reply: AI classification → update lead status    │
+│  - book_meeting: Google Calendar create → log event          │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -28,19 +30,19 @@ Database-driven cold email automation system with an AI orchestrator that optimi
 
 ### Database (Supabase)
 - **Supabase Project:** `xffzwhisocyimeyxnrtr` (slope-side)
-- Schema in `supabase/migrations/001_initial_schema.sql`
-- Seed data in `supabase/migrations/002_seed_scaleme_sequence.sql`
+- Schema in `supabase/migrations/`
 
-### n8n Workflows
-All workflows live on [n8n cloud](https://slope-side.app.n8n.cloud):
-
-| Workflow | ID | Trigger | What it does |
-|----------|-----|---------|-------------|
-| Cold Email Sender | `A8WAvmL3Xjr6bdea` | Schedule (15 min) | Queries due leads, resolves templates, sends via Gmail |
-| Reply Watcher | `jVMwW9P3zxcg9SBX` | Gmail Trigger | Classifies replies with AI, auto-responds to interested leads |
-| Meeting Booker | `L7eI0SOEthBBh67E` | Webhook POST | Creates Google Calendar events for confirmed meetings |
-
-SDK source code in `n8n/workflows/`.
+| Table | Purpose |
+|-------|---------|
+| `leads` | Prospect contact info and status |
+| `sequences` | Email sequence definitions |
+| `sequence_steps` | Templates, timing, and channel per step |
+| `lead_sequence_state` | Where each lead is in their sequence + concurrency lock |
+| `email_accounts` | Sender email configuration and daily rate limits |
+| `emails` | Every sent/received email with Gmail message/thread IDs |
+| `jobs` | Task queue for all async work (send, check, classify, book) |
+| `events` | Immutable log of all actions (sends, replies, meetings) |
+| `orchestrator_logs` | Daily decision log from the orchestrator agent |
 
 ### Orchestrator Agent
 - System prompt: `orchestrator/SYSTEM_PROMPT.md`
@@ -51,12 +53,11 @@ Run the orchestrator by opening a new Cursor agent chat and referencing the orch
 
 ## Setup
 
-### 1. Configure n8n Credentials
-Each workflow needs credentials configured in the n8n UI:
-- **Supabase Postgres** — connection string to your Supabase database
-- **Gmail OAuth2** — Google account for sending/receiving emails
-- **OpenAI API** — for reply classification (Workflow 2)
-- **Google Calendar OAuth2** — for calendar availability (Workflows 2 & 3)
+### 1. Add an Email Account
+```sql
+INSERT INTO email_accounts (email, display_name, provider, daily_send_limit)
+VALUES ('cameron@scaleme.ai', 'Cameron', 'gmail', 50);
+```
 
 ### 2. Add Leads
 Use the orchestrator agent or insert directly:
@@ -72,11 +73,19 @@ VALUES (
 );
 ```
 
-### 3. Activate Workflows
-In n8n, toggle each workflow to active. The Cold Email Sender will start processing leads whose `next_action_at` has passed.
-
-### 4. Run the Orchestrator
+### 3. Run the Orchestrator
 Each morning, start an agent chat in Cursor with the orchestrator context. It will pull metrics, analyze performance, and suggest/make optimizations.
+
+## How the Job Queue Works
+
+The `jobs` table is the central dispatch for all async work:
+
+1. **Enqueue** — Insert a row with `job_type`, `payload`, and `scheduled_for`
+2. **Claim** — A worker atomically claims a job: `UPDATE jobs SET status = 'claimed', claimed_at = NOW(), claimed_by = 'worker-id' WHERE id = ... AND status = 'pending'`
+3. **Execute** — Worker runs the task (send email, classify reply, etc.)
+4. **Complete/Fail** — Worker updates status to `completed` or `failed` (with error + retry_count)
+
+The `lead_sequence_state.locked_until` column prevents double-sends when multiple workers overlap.
 
 ## Email Sequence (Default)
 
@@ -98,4 +107,4 @@ The orchestrator adjusts templates and timing based on performance data.
 | `{{title}}` | `leads.title` |
 | `{{industry}}` | `leads.industry` |
 | `{{company_size}}` | `leads.company_size` |
-| `{{sender_name}}` | Hardcoded in Code node (default: "Cameron") |
+| `{{sender_name}}` | `email_accounts.display_name` |

@@ -41,14 +41,17 @@ Arguments: { "project_id": "xffzwhisocyimeyxnrtr", "query": "YOUR SQL HERE" }
 |-------|---------|
 | `leads` | Prospect contact info and status |
 | `sequences` | Email sequence definitions |
-| `sequence_steps` | Templates and timing per step |
-| `lead_sequence_state` | Where each lead is in their sequence |
-| `events` | Log of all actions (sends, replies, meetings) |
+| `sequence_steps` | Templates, timing, and channel per step |
+| `lead_sequence_state` | Where each lead is in their sequence + concurrency lock |
+| `email_accounts` | Sender email configuration and rate limits |
+| `emails` | Every sent/received email with Gmail message/thread IDs |
+| `jobs` | Task queue for async work (send, check, classify, book) |
+| `events` | Immutable log of all actions (sends, replies, meetings) |
 | `orchestrator_logs` | Your daily decision log |
 
 ## Rules
 
-- Never send emails directly — only modify database records
+- Never send emails directly — only modify database records and enqueue jobs
 - Always log decisions with reasoning in `orchestrator_logs`
 - Keep email templates concise (3-5 sentences)
 - Use UTC timestamps
