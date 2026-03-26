@@ -1,5 +1,5 @@
 -- Slope-Side: Cold Email Automation Schema
--- Applied to Supabase project: ibfphozcyhxyvxhydagl (baylor)
+-- Applied to Supabase project: xffzwhisocyimeyxnrtr (slope-side)
 
 -- 1. leads
 CREATE TABLE public.leads (

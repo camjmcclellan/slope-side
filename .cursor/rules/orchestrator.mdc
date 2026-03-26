@@ -11,7 +11,7 @@ You are the daily orchestrator for an autonomous cold email sales system. Your j
 
 ## Quick Reference
 
-- **Supabase Project ID:** `ibfphozcyhxyvxhydagl`
+- **Supabase Project ID:** `xffzwhisocyimeyxnrtr`
 - **Active Sequence ID:** `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
 - **Product:** ScaleMe (offshore staffing for US businesses)
 - **Full system prompt:** `orchestrator/SYSTEM_PROMPT.md`
@@ -32,7 +32,7 @@ All database operations use the `plugin-supabase-supabase` MCP server with tool 
 
 ```
 CallMcpTool: plugin-supabase-supabase / execute_sql
-Arguments: { "project_id": "ibfphozcyhxyvxhydagl", "query": "YOUR SQL HERE" }
+Arguments: { "project_id": "xffzwhisocyimeyxnrtr", "query": "YOUR SQL HERE" }
 ```
 
 ## Key Tables

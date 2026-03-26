@@ -27,7 +27,7 @@ Database-driven cold email automation system with an AI orchestrator that optimi
 ## Components
 
 ### Database (Supabase)
-- **Supabase Project:** `ibfphozcyhxyvxhydagl` (baylor)
+- **Supabase Project:** `xffzwhisocyimeyxnrtr` (slope-side)
 - Schema in `supabase/migrations/001_initial_schema.sql`
 - Seed data in `supabase/migrations/002_seed_scaleme_sequence.sql`
 
