@@ -1,134 +1,359 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ScaleMe SDR</title>
   <style>
-    body { font-family: sans-serif; margin: 0; padding: 0; background: #f9fafb; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* Top bar */
-    .topbar { background: white; border-bottom: 1px solid #e5e7eb; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
-    .topbar h1 { margin: 0; font-size: 20px; }
-    #clock { font-size: 13px; color: #6b7280; }
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3250;
+      --accent: #4f6ef7;
+      --accent-hover: #3d5ce6;
+      --accent-dim: rgba(79,110,247,0.12);
+      --green: #22c55e;
+      --green-dim: rgba(34,197,94,0.12);
+      --red: #ef4444;
+      --red-dim: rgba(239,68,68,0.12);
+      --text: #e8eaf2;
+      --text-dim: #8891b8;
+      --text-muted: #4e5578;
+    }
 
-    /* Tabs */
-    .tabs { display: flex; gap: 0; border-bottom: 1px solid #e5e7eb; background: white; padding: 0 32px; }
-    .tab { padding: 12px 20px; cursor: pointer; font-size: 14px; font-weight: 500; color: #6b7280; border-bottom: 2px solid transparent; margin-bottom: -1px; }
-    .tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* Topbar */
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 32px; }
+    .logo { font-size: 16px; font-weight: 700; letter-spacing: 0.02em; color: var(--text); }
+    .logo span { color: var(--accent); }
+
+    .nav { display: flex; gap: 2px; }
+    .nav-item {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      border: none;
+      background: none;
+    }
+    .nav-item:hover { background: var(--surface2); color: var(--text); }
+    .nav-item.active { background: var(--accent-dim); color: var(--accent); }
+
+    .topbar-right { display: flex; align-items: center; gap: 16px; }
+    #clock { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+    .topbar-actions { display: flex; gap: 8px; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; font-size: 13px; font-weight: 500;
+      border-radius: 6px; border: none; cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-ghost {
+      background: var(--surface2); color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover:not(:disabled) { color: var(--text); border-color: var(--text-muted); }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn-success:hover:not(:disabled) { background: #16a34a; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
 
     /* Pages */
-    .page { display: none; padding: 32px; }
+    .page { display: none; padding: 28px 32px; max-width: 1400px; }
     .page.active { display: block; }
 
-    /* Dashboard */
-    .actions { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; }
-    button { padding: 10px 22px; font-size: 14px; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 6px; font-weight: 500; }
-    button:disabled { background: #93c5fd; cursor: not-allowed; }
-    button.secondary { background: #6b7280; }
-    #spinner { display: none; font-size: 13px; color: #6b7280; }
-    #result { display: none; }
-    .card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-    .label { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin-bottom: 6px; }
-    .value { font-size: 14px; color: #111827; white-space: pre-wrap; }
-    .status { font-size: 14px; font-weight: 600; padding: 10px 16px; border-radius: 6px; display: inline-block; }
-    .success { background: #d1fae5; color: #065f46; }
-    .error { background: #fee2e2; color: #991b1b; }
+    /* Page header */
+    .page-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .page-title { font-size: 18px; font-weight: 600; }
+    .page-subtitle { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+
+    /* Stats row */
+    .stats-row { display: flex; gap: 12px; margin-bottom: 24px; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 20px; flex: 1;
+    }
+    .stat-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: var(--text); }
+    .stat-detail { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 
     /* Tables */
-    .table-wrap { overflow-x: auto; background: white; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .table-wrap {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; overflow-x: auto; overflow-y: hidden;
+    }
     table { border-collapse: collapse; width: 100%; font-size: 13px; table-layout: fixed; }
+    .leads-table { table-layout: auto; min-width: 1200px; }
+    .leads-table td {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 0;
+    }
+    thead { background: var(--surface2); }
     th {
-      background: #f3f4f6; text-align: left; padding: 10px 14px; font-weight: 600;
-      color: #374151; white-space: nowrap; border-bottom: 1px solid #e5e7eb;
+      padding: 10px 14px; text-align: left; font-weight: 600;
+      color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
       position: relative; user-select: none; overflow: hidden;
     }
     th .th-inner { display: flex; align-items: center; gap: 6px; }
-    th .sort-arrows { display: flex; flex-direction: column; line-height: 1; cursor: pointer; color: #9ca3af; font-size: 10px; }
-    th .sort-arrows span { line-height: 1.1; }
-    th .sort-arrows .active-arrow { color: #2563eb; }
+    th .sort-arrows { display: flex; flex-direction: column; line-height: 1; cursor: pointer; color: var(--text-muted); font-size: 9px; }
+    th .sort-arrows span { line-height: 1.2; }
+    th .sort-arrows .active-arrow { color: var(--accent); }
     th .resizer {
-      position: absolute; right: 0; top: 0; width: 5px; height: 100%;
-      cursor: col-resize; user-select: none;
+      position: absolute; right: 0; top: 0; width: 4px; height: 100%;
+      cursor: col-resize; user-select: none; border-right: 2px solid transparent;
     }
-    th .resizer:hover, th .resizer.resizing { background: #2563eb; opacity: 0.4; }
-    td { padding: 10px 14px; border-bottom: 1px solid #f3f4f6; color: #111827; overflow-wrap: break-word; word-break: break-word; white-space: normal; }
+    th .resizer:hover, th .resizer.resizing { border-right-color: var(--accent); }
+    td {
+      padding: 11px 14px; border-bottom: 1px solid var(--border);
+      color: var(--text); overflow-wrap: break-word; word-break: break-word; white-space: normal;
+      vertical-align: top;
+    }
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #f9fafb; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .empty-row td { padding: 40px 20px; color: var(--text-muted); text-align: center; font-size: 14px; }
+
+    /* Plan row specifics */
+    .lead-name { font-weight: 500; color: var(--text); }
+    .lead-meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+    .subject-text { font-weight: 500; }
+    .body-preview { font-size: 12px; color: var(--text-dim); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
+    .variant-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+    }
+    .variant-a { background: rgba(79,110,247,0.15); color: #7d9bff; }
+    .variant-b { background: rgba(168,85,247,0.15); color: #c084fc; }
+    .scheduled-time { font-variant-numeric: tabular-nums; }
+    .time-soon { color: var(--green); }
+    .time-past { color: var(--text-muted); }
+
+    /* History specifics */
+    .response-count {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; font-weight: 600;
+    }
+    .has-replies { color: var(--green); }
+    .no-replies { color: var(--text-muted); }
+    .reply-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-left: 3px solid var(--green);
+      border-radius: 6px; padding: 10px 12px; margin-top: 8px;
+    }
+    .reply-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+    .reply-body { font-size: 13px; white-space: pre-wrap; color: var(--text); }
+
+    /* Review panel */
+    .review-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px; margin-top: 20px;
+    }
+    .review-panel-title { font-size: 13px; font-weight: 600; color: var(--text-dim); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    #review-log {
+      font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
+      color: var(--text-dim); white-space: pre-wrap; max-height: 360px;
+      overflow-y: auto; line-height: 1.7;
+    }
+    #review-log .log-done { color: var(--green); font-weight: 600; }
+    #review-log .log-error { color: var(--red); }
+
+    /* Inbox result */
+    .inbox-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px; margin-top: 16px;
+    }
+    .inbox-panel-title { font-size: 13px; font-weight: 600; color: var(--text-dim); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+    #inbox-log {
+      font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
+      color: var(--text-dim); white-space: pre-wrap; line-height: 1.7;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 999;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 18px; font-size: 13px;
+      animation: slideIn 0.2s ease; display: flex; align-items: center; gap: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error { border-left: 3px solid var(--red); }
+    @keyframes slideIn { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* Spinner */
+    .spinner {
+      width: 14px; height: 14px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.7s linear infinite; display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
   </style>
 </head>
 <body>
 
   <div class="topbar">
-    <h1>ScaleMe SDR</h1>
-    <span id="clock"></span>
-  </div>
-
-  <div class="tabs">
-    <div class="tab active" onclick="showTab('dashboard', this)">Dashboard</div>
-    <div class="tab" onclick="showTab('leads-page', this)">Leads</div>
-    <div class="tab" onclick="showTab('history-page', this)">History</div>
-    <div class="tab" onclick="showTab('plan-page', this)">Plan</div>
-  </div>
-
-  <!-- Dashboard -->
-  <div id="dashboard" class="page active">
-    <div class="actions">
-      <button id="btn" onclick="sendEmail()">Send Email to Random Lead</button>
-      <button class="secondary" onclick="">Simulate 8am</button>
-      <button class="secondary" id="review-btn" onclick="runReview()">Run Morning Review</button>
-      <span id="spinner">Generating &amp; sending...</span>
-      <span id="review-spinner" style="display:none;font-size:13px;color:#6b7280;">Running review...</span>
+    <div class="topbar-left">
+      <div class="logo">Scale<span>Me</span> SDR</div>
+      <nav class="nav">
+        <button class="nav-item active" onclick="showTab('home', this)">Home</button>
+        <button class="nav-item" onclick="showTab('history-page', this)">History</button>
+        <button class="nav-item" onclick="showTab('leads-page', this)">Leads</button>
+        <a class="nav-item" href="/intro" style="text-decoration:none;">About</a>
+      </nav>
     </div>
-
-    <div id="result">
-      <div class="card">
-        <div class="label">Lead</div>
-        <div class="value" id="lead-info"></div>
-      </div>
-      <div class="card">
-        <div class="label">Subject</div>
-        <div class="value" id="subject"></div>
-      </div>
-      <div class="card">
-        <div class="label">Body</div>
-        <div class="value" id="body"></div>
-      </div>
-      <div id="status"></div>
-    </div>
-
-    <div id="review-result" style="display:none;">
-      <div class="card">
-        <div class="label">Morning Review Log</div>
-        <div id="review-log" style="font-size:13px;font-family:monospace;color:#111827;white-space:pre-wrap;max-height:400px;overflow-y:auto;"></div>
+    <div class="topbar-right">
+      <span id="clock"></span>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" id="inbox-btn" onclick="checkInbox()">Check Inbox</button>
+        <button class="btn btn-primary btn-sm" id="review-btn" onclick="runReview()">Run Morning Review</button>
       </div>
     </div>
   </div>
 
-  <!-- Leads -->
-  <div id="leads-page" class="page">
-    <div class="table-wrap">
-      <table id="leads-table"><thead></thead><tbody></tbody></table>
+  <!-- Home -->
+  <div id="home" class="page active">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Outreach Queue</div>
+        <div class="page-subtitle">Emails scheduled for delivery, ordered by send time</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadHome()">Refresh</button>
+    </div>
+
+    <div class="stats-row" id="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Queued</div>
+        <div class="stat-value" id="stat-queued">--</div>
+        <div class="stat-detail">emails in plan</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Sent Today</div>
+        <div class="stat-value" id="stat-sent">--</div>
+        <div class="stat-detail">in history</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Replies</div>
+        <div class="stat-value" id="stat-replies">--</div>
+        <div class="stat-detail">responses received</div>
+      </div>
+    </div>
+
+    <div class="table-wrap" id="plan-wrap">
+      <table id="plan-table">
+        <thead>
+          <tr>
+            <th style="width:180px;"><div class="th-inner">Contact</div></th>
+            <th style="width:280px;"><div class="th-inner">Subject / Preview</div></th>
+            <th style="width:100px;"><div class="th-inner">Variant</div></th>
+            <th style="width:160px;"><div class="th-inner">Scheduled</div></th>
+            <th style="width:110px;"><div class="th-inner">Action</div></th>
+          </tr>
+        </thead>
+        <tbody id="plan-tbody">
+          <tr class="empty-row"><td colspan="5">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div id="inbox-panel" class="inbox-panel" style="display:none;">
+      <div class="inbox-panel-title">Inbox Check</div>
+      <div id="inbox-log"></div>
+    </div>
+
+    <div id="review-panel" class="review-panel" style="display:none;">
+      <div class="review-panel-title">Morning Review Log</div>
+      <div id="review-log"></div>
     </div>
   </div>
 
   <!-- History -->
   <div id="history-page" class="page">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Sent History</div>
+        <div class="page-subtitle">All outbound emails and received replies</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadHistory()">Refresh</button>
+    </div>
+
     <div class="table-wrap">
-      <table id="history-table"><thead></thead><tbody></tbody></table>
+      <table id="history-table">
+        <thead>
+          <tr>
+            <th style="width:180px;"><div class="th-inner">Contact</div></th>
+            <th style="width:280px;"><div class="th-inner">Subject</div></th>
+            <th style="width:160px;"><div class="th-inner">Sent At</div></th>
+            <th style="width:90px;"><div class="th-inner">Replies</div></th>
+            <th><div class="th-inner">Reply Content</div></th>
+          </tr>
+        </thead>
+        <tbody id="history-tbody">
+          <tr class="empty-row"><td colspan="5">Loading...</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
-  <!-- Plan -->
-  <div id="plan-page" class="page">
+  <!-- Leads -->
+  <div id="leads-page" class="page">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Leads</div>
+        <div class="page-subtitle">Raw lead database</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="loadLeads()">Refresh</button>
+        <button class="btn btn-sm" style="background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.3);" onclick="resetDb()">Reset Database</button>
+      </div>
+    </div>
     <div class="table-wrap">
-      <table id="plan-table"><thead></thead><tbody></tbody></table>
+      <table id="leads-table" class="leads-table"><thead></thead><tbody></tbody></table>
     </div>
   </div>
 
   <script>
     // Clock
     function updateClock() {
-      document.getElementById('clock').textContent = new Date().toLocaleString(undefined, {
-        year: 'numeric', month: 'long', day: 'numeric',
+      const now = new Date();
+      document.getElementById('clock').textContent = now.toLocaleString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       });
     }
@@ -138,65 +363,215 @@
     // Tabs
     function showTab(id, el) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
       document.getElementById(id).classList.add('active');
       el.classList.add('active');
-      if (id === 'leads-page') loadTable('leads-table', '/leads');
-      if (id === 'history-page') loadTable('history-table', '/history', 'No emails sent yet.');
-      if (id === 'plan-page') loadTable('plan-table', '/plan', 'No plan generated yet. Run Morning Review first.');
+      if (id === 'home') loadHome();
+      if (id === 'history-page') loadHistory();
+      if (id === 'leads-page') loadLeads();
     }
 
-    // Generic table loader with sort + resize
-    async function loadTable(tableId, url, emptyMsg = 'No data.') {
-      const res = await fetch(url);
+    // Format scheduled time
+    function formatScheduled(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      const now = new Date();
+      const diffMin = (d - now) / 60000;
+      const str = d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      let cls = 'scheduled-time';
+      if (diffMin < 30 && diffMin > 0) cls += ' time-soon';
+      else if (diffMin < 0) cls += ' time-past';
+      return `<span class="${cls}">${str}</span>`;
+    }
+
+    // Home / plan
+    async function loadHome() {
+      const [planRes, histRes] = await Promise.all([fetch('/plan'), fetch('/history')]);
+      const planRows = await planRes.json();
+      const histRows = await histRes.json();
+
+      // Stats
+      const totalReplies = histRows.reduce((acc, r) => {
+        try { return acc + JSON.parse(r.responses || '[]').length; } catch { return acc; }
+      }, 0);
+      document.getElementById('stat-queued').textContent = planRows.length;
+      document.getElementById('stat-sent').textContent = histRows.length;
+      document.getElementById('stat-replies').textContent = totalReplies;
+
+      const tbody = document.getElementById('plan-tbody');
+      if (!planRows.length) {
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No emails queued. Run Morning Review to generate a plan.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = planRows.map(row => {
+        const name = `${row.first_name || ''} ${row.last_name || ''}`.trim() || 'Unknown';
+        const meta = [row.title, row.company].filter(Boolean).join(' at ');
+        const variantClass = row.variant === 'A' ? 'variant-a' : row.variant === 'B' ? 'variant-b' : '';
+        const variantLabel = row.variant ? `<span class="variant-badge ${variantClass}">Variant ${row.variant}</span>` : '';
+        const body = (row.body || '').replace(/</g, '&lt;');
+        return `<tr id="plan-row-${row.id}">
+          <td>
+            <div class="lead-name">${name}</div>
+            <div class="lead-meta">${meta}</div>
+          </td>
+          <td>
+            <div class="subject-text">${row.subject || ''}</div>
+            <div class="body-preview">${body}</div>
+          </td>
+          <td>${variantLabel}</td>
+          <td>${formatScheduled(row.scheduled_at)}</td>
+          <td>
+            <button class="btn btn-success btn-sm" onclick="sendPlanRow(${row.id}, this)">Send Now</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function sendPlanRow(planId, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      btn.classList.remove('btn-success');
+      btn.classList.add('btn-ghost');
+
+      const res = await fetch(`/send_plan/${planId}`, { method: 'POST' });
+      const data = await res.json();
+
+      if (data.success) {
+        const row = document.getElementById(`plan-row-${planId}`);
+        row.style.opacity = '0';
+        row.style.transition = 'opacity 0.3s';
+        setTimeout(() => { row.remove(); updateQueuedStat(); }, 300);
+        showToast('Email sent successfully', 'success');
+      } else {
+        btn.textContent = 'Failed';
+        btn.disabled = false;
+        showToast('Send failed: ' + data.error, 'error');
+      }
+    }
+
+    function updateQueuedStat() {
+      const rows = document.querySelectorAll('#plan-tbody tr:not(.empty-row)');
+      document.getElementById('stat-queued').textContent = rows.length;
+      if (!rows.length) {
+        document.getElementById('plan-tbody').innerHTML =
+          '<tr class="empty-row"><td colspan="5">All queued emails have been sent.</td></tr>';
+      }
+    }
+
+    // History
+    async function loadHistory() {
+      const res = await fetch('/history');
       const rows = await res.json();
-      const table = document.getElementById(tableId);
+      const tbody = document.getElementById('history-tbody');
+
+      if (!rows.length) {
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No emails sent yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = rows.map(row => {
+        const name = `${row.first_name || ''} ${row.last_name || ''}`.trim() || 'Unknown';
+        const meta = [row.title, row.company].filter(Boolean).join(' at ');
+
+        let replies = [];
+        try { replies = JSON.parse(row.responses || '[]'); } catch {}
+
+        const replyBadge = replies.length
+          ? `<span class="response-count has-replies">&#10003; ${replies.length} repl${replies.length === 1 ? 'y' : 'ies'}</span>`
+          : `<span class="response-count no-replies">None</span>`;
+
+        const replyCards = replies.map(r => {
+          const from = (r.from || '').replace(/</g, '&lt;');
+          const body = (r.body || '').replace(/</g, '&lt;');
+          const when = r.received_at ? r.received_at.slice(0, 19).replace('T', ' ') + ' UTC' : '';
+          return `<div class="reply-card">
+            <div class="reply-meta">${from} &bull; ${when}</div>
+            <div class="reply-body">${body}</div>
+          </div>`;
+        }).join('');
+
+        const sentAt = row.sent_at ? row.sent_at.slice(0, 19).replace('T', ' ') : '';
+
+        return `<tr>
+          <td>
+            <div class="lead-name">${name}</div>
+            <div class="lead-meta">${meta}</div>
+          </td>
+          <td>${row.subject || ''}</td>
+          <td style="font-variant-numeric:tabular-nums;font-size:12px;color:var(--text-dim);">${sentAt}</td>
+          <td>${replyBadge}</td>
+          <td>${replyCards || '<span style="color:var(--text-muted);font-size:12px;">No replies yet</span>'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Leads table
+    const LEADS_COL_ORDER = [
+      'first_name', 'last_name', 'title', 'company', 'industry',
+      'email', 'secondary_email', 'city', 'state',
+      'keywords', 'website', 'linkedin_url',
+      'contact_owner', 'account_owner', 'id',
+    ];
+    const LEADS_COL_WIDTHS = {
+      id: 48, first_name: 100, last_name: 110, email: 200,
+      contact_owner: 130, account_owner: 130, secondary_email: 190,
+      title: 160, company: 150, industry: 130, keywords: 260,
+      city: 90, state: 60, website: 180, linkedin_url: 200,
+    };
+
+    async function loadLeads() {
+      const res = await fetch('/leads');
+      const rows = await res.json();
+      const table = document.getElementById('leads-table');
       const thead = table.querySelector('thead');
       const tbody = table.querySelector('tbody');
 
       if (!rows.length) {
         thead.innerHTML = '';
-        tbody.innerHTML = `<tr><td style="padding:20px;color:#6b7280;">${emptyMsg}</td></tr>`;
+        tbody.innerHTML = '<tr class="empty-row"><td>No leads found.</td></tr>';
         return;
       }
 
-      const cols = Object.keys(rows[0]);
-      let sortCol = null;
-      let sortDir = 1; // 1 = asc, -1 = desc
+      // Order columns: preferred order first, then any unexpected extras
+      const available = new Set(Object.keys(rows[0]));
+      const cols = [
+        ...LEADS_COL_ORDER.filter(c => available.has(c)),
+        ...Object.keys(rows[0]).filter(c => !LEADS_COL_ORDER.includes(c)),
+      ];
+      let sortCol = null, sortDir = 1;
       let data = [...rows];
 
-      function renderTable() {
-        // Header
-        thead.innerHTML = '<tr>' + cols.map((c, i) => `
-          <th style="width:160px;" data-col="${i}">
+      function render() {
+        thead.innerHTML = '<tr>' + cols.map((c, i) => {
+          const w = LEADS_COL_WIDTHS[c] || 140;
+          return `<th style="width:${w}px;min-width:${w}px;" data-col="${i}">
             <div class="th-inner">
               <span>${c}</span>
               <span class="sort-arrows" data-col="${i}">
-                <span data-dir="asc">▲</span>
-                <span data-dir="desc">▼</span>
+                <span data-dir="asc">&#9650;</span>
+                <span data-dir="desc">&#9660;</span>
               </span>
             </div>
-            <div class="resizer" data-col="${i}"></div>
-          </th>`).join('') + '</tr>';
+            <div class="resizer"></div>
+          </th>`;
+        }).join('') + '</tr>';
 
-        // Highlight active sort
         if (sortCol !== null) {
           const arrows = thead.querySelectorAll('.sort-arrows')[sortCol];
           if (arrows) {
-            arrows.querySelector(`[data-dir="${sortDir === 1 ? 'asc' : 'desc'}"]`).classList.add('active-arrow');
+            const dir = sortDir === 1 ? 'asc' : 'desc';
+            arrows.querySelector(`[data-dir="${dir}"]`).classList.add('active-arrow');
           }
         }
 
-        // Body
         tbody.innerHTML = data.map(row =>
-          '<tr>' + cols.map(c => `<td title="${row[c] ?? ''}">${row[c] ?? ''}</td>`).join('') + '</tr>'
+          '<tr>' + cols.map(c => {
+            const val = row[c] ?? '';
+            return `<td title="${String(val).replace(/"/g, '&quot;')}">${val}</td>`;
+          }).join('') + '</tr>'
         ).join('');
 
-        attachSort();
-        attachResize();
-      }
-
-      function attachSort() {
         thead.querySelectorAll('.sort-arrows').forEach(el => {
           el.addEventListener('click', e => {
             const col = parseInt(el.dataset.col);
@@ -209,12 +584,10 @@
               const bv = b[cols[col]] ?? '';
               return av < bv ? -sortDir : av > bv ? sortDir : 0;
             });
-            renderTable();
+            render();
           });
         });
-      }
 
-      function attachResize() {
         thead.querySelectorAll('.resizer').forEach(resizer => {
           resizer.addEventListener('mousedown', e => {
             e.preventDefault();
@@ -222,9 +595,10 @@
             const startX = e.pageX;
             const startW = th.offsetWidth;
             resizer.classList.add('resizing');
-
             function onMove(e) {
-              th.style.width = Math.max(60, startW + e.pageX - startX) + 'px';
+              const w = Math.max(48, startW + e.pageX - startX);
+              th.style.width = w + 'px';
+              th.style.minWidth = w + 'px';
             }
             function onUp() {
               resizer.classList.remove('resizing');
@@ -237,20 +611,20 @@
         });
       }
 
-      renderTable();
+      render();
     }
 
     // Morning review
     function runReview() {
       const btn = document.getElementById('review-btn');
-      const spinner = document.getElementById('review-spinner');
       const logEl = document.getElementById('review-log');
-      const resultEl = document.getElementById('review-result');
+      const panel = document.getElementById('review-panel');
 
       btn.disabled = true;
-      spinner.style.display = 'inline';
+      btn.innerHTML = '<span class="spinner"></span> Running...';
       logEl.textContent = '';
-      resultEl.style.display = 'block';
+      panel.style.display = 'block';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
       const es = new EventSource('/review');
 
@@ -260,50 +634,78 @@
           logEl.textContent += data.msg + '\n';
           logEl.scrollTop = logEl.scrollHeight;
         } else if (data.type === 'done') {
-          logEl.textContent += `\nDone. ${data.leads_scheduled} emails scheduled (A: ${data.variant_a_count}, B: ${data.variant_b_count}). History reviewed: ${data.history_reviewed}.`;
+          logEl.innerHTML += `\n<span class="log-done">Done. ${data.leads_scheduled} emails scheduled (A: ${data.variant_a_count}, B: ${data.variant_b_count}). History reviewed: ${data.history_reviewed}.</span>`;
           logEl.scrollTop = logEl.scrollHeight;
           es.close();
           btn.disabled = false;
-          spinner.style.display = 'none';
+          btn.textContent = 'Run Morning Review';
+          showToast(`${data.leads_scheduled} emails scheduled`, 'success');
+          loadHome();
         } else if (data.type === 'error') {
-          logEl.textContent += `\nERROR: ${data.msg}`;
+          logEl.innerHTML += `\n<span class="log-error">ERROR: ${data.msg}</span>`;
           es.close();
           btn.disabled = false;
-          spinner.style.display = 'none';
+          btn.textContent = 'Run Morning Review';
+          showToast('Review failed: ' + data.msg, 'error');
         }
       };
 
       es.onerror = () => {
         es.close();
         btn.disabled = false;
-        spinner.style.display = 'none';
+        btn.textContent = 'Run Morning Review';
       };
     }
 
-    // Send email
-    async function sendEmail() {
-      const btn = document.getElementById('btn');
-      const spinner = document.getElementById('spinner');
-      btn.disabled = true;
-      spinner.style.display = 'inline';
-      document.getElementById('result').style.display = 'none';
+    // Check inbox
+    async function checkInbox() {
+      const btn = document.getElementById('inbox-btn');
+      const logEl = document.getElementById('inbox-log');
+      const panel = document.getElementById('inbox-panel');
 
-      const res = await fetch('/send', { method: 'POST' });
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>';
+
+      const res = await fetch('/check_inbox', { method: 'POST' });
       const data = await res.json();
 
-      document.getElementById('lead-info').textContent =
-        `${data.lead.first_name} ${data.lead.last_name} — ${data.lead.title} at ${data.lead.company}`;
-      document.getElementById('subject').textContent = data.subject;
-      document.getElementById('body').textContent = data.body;
-      document.getElementById('status').innerHTML =
-        `<span class="status ${data.success ? 'success' : 'error'}">
-          ${data.success ? '&#10003; Email sent successfully' : '&#10007; Failed: ' + data.error}
-        </span>`;
+      if (data.success) {
+        logEl.textContent = data.log.join('\n') + `\n\nProcessed: ${data.processed} | Matched: ${data.matched}`;
+        showToast(`Inbox checked: ${data.matched} new repl${data.matched === 1 ? 'y' : 'ies'} matched`, 'success');
+      } else {
+        logEl.textContent = 'Error: ' + data.error;
+        showToast('Inbox check failed', 'error');
+      }
 
-      document.getElementById('result').style.display = 'block';
+      panel.style.display = 'block';
       btn.disabled = false;
-      spinner.style.display = 'none';
+      btn.textContent = 'Check Inbox';
     }
+
+    // Toast notifications
+    function showToast(msg, type = 'success') {
+      const t = document.createElement('div');
+      t.className = `toast ${type}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(() => t.remove(), 300); }, 3500);
+    }
+
+    // Reset database
+    async function resetDb() {
+      if (!confirm('This will delete ALL history, plan, and prompts data and reseed leads from the CSV. Are you sure?')) return;
+      const res = await fetch('/reset_db', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Database reset and reseeded', 'success');
+        loadLeads();
+      } else {
+        showToast('Reset failed: ' + data.error, 'error');
+      }
+    }
+
+    // Initial load
+    loadHome();
   </script>
 </body>
 </html>
