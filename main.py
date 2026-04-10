@@ -4,9 +4,11 @@ import random
 import sqlite3
 from pathlib import Path
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, Response, stream_with_context
 
+from checkinbox import check_inbox
 from createdb import init_db
 from queryllm import query_llm
 from sendemail import send_email
@@ -14,7 +16,34 @@ from sendemail import send_email
 load_dotenv(Path(__file__).with_name(".env"))
 init_db()
 
+scheduler = BackgroundScheduler(misfire_grace_time=30)
+scheduler.add_job(check_inbox, "interval", minutes=15)
+scheduler.add_job(lambda: dispatch_scheduled_emails(), "interval", minutes=1)
+scheduler.add_job(lambda: run_morning_review(lambda msg: print(f"[review] {msg}")), "cron", hour=8, minute=0)
+scheduler.start()
+
 DB_PATH = Path(__file__).with_name("data.db")
+
+
+def extract_json(text: str) -> dict:
+    # Strip markdown code fences if present
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```", 2)[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    # Extract outermost JSON object
+    start = text.index('{')
+    depth = 0
+    for i, ch in enumerate(text[start:], start):
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                return json.loads(text[start:i+1])
+    raise ValueError("No valid JSON object found in LLM response")
 
 SYSTEM_INSTRUCTION = (
     "You are an expert AI SDR for ScaleMe. Your goal is to write a personalized, "
@@ -29,7 +58,7 @@ app = Flask(__name__)
 
 
 def leads_to_json():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM leads")
@@ -57,10 +86,20 @@ Output your response as JSON with the following structure:
 {{"subject": "<email subject line>", "body": "<email body>"}}"""
 
 
+def query_llm_with_retry(model, system, prompt, retries=5):
+    for attempt in range(1, retries + 1):
+        try:
+            response = query_llm(model=model, system=system, prompt=prompt)
+            return extract_json(response)
+        except Exception as e:
+            if attempt == retries:
+                raise
+            print(f"[retry] Attempt {attempt} failed ({e}), retrying...")
+
+
 def generate_email(lead: dict) -> tuple[str, str, str]:
     prompt = build_prompt(lead)
-    response = query_llm(model=MODEL, system=SYSTEM_INSTRUCTION, prompt=prompt)
-    data = json.loads(response[response.index('{'):response.rindex('}')+1])
+    data = query_llm_with_retry(model=MODEL, system=SYSTEM_INSTRUCTION, prompt=prompt)
     return data["subject"], data["body"], prompt
 
 
@@ -70,7 +109,7 @@ def run_morning_review(log):
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=24)).isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
@@ -79,29 +118,67 @@ def run_morning_review(log):
     recent_history = [dict(r) for r in cursor.fetchall()]
     log(f"Found {len(recent_history)} email(s) sent in the last 24 hours.")
 
-    default_instruction = SYSTEM_INSTRUCTION
-    if recent_history:
-        log("Building review prompt from yesterday's emails...")
-        history_summary = json.dumps([
-            {"subject": r["subject"], "body": r["body"]} for r in recent_history
-        ], indent=2)
+    # Pull the most recent A/B prompt pair
+    cursor.execute("SELECT * FROM prompts ORDER BY created_at DESC LIMIT 2")
+    recent_prompts = [dict(r) for r in cursor.fetchall()]
+
+    if recent_history and recent_prompts:
+        log("Building A/B performance report from last session's prompts...")
+
+        def build_variant_report(prompt_row):
+            pid = prompt_row["id"]
+            variant = prompt_row["variant"]
+            sends = [r for r in recent_history if r.get("prompt_id") == pid]
+            responses = []
+            for s in sends:
+                replies = json.loads(s.get("responses") or "[]")
+                responses.extend(replies)
+            log(f"  Variant {variant} (prompt id={pid}): {len(sends)} sent, {len(responses)} response(s).")
+            return {
+                "variant": variant,
+                "system_instruction": prompt_row["system_instruction"],
+                "emails_sent": len(sends),
+                "responses_received": len(responses),
+                "responses": [{"from": r.get("from"), "body": r.get("body")} for r in responses],
+            }
+
+        reports = [build_variant_report(p) for p in recent_prompts]
+
+        # Include unlinked sends (sent via random button, no prompt_id)
+        unlinked = [r for r in recent_history if r.get("prompt_id") is None]
+        if unlinked:
+            unlinked_responses = []
+            for r in unlinked:
+                unlinked_responses.extend(json.loads(r.get("responses") or "[]"))
+            log(f"  Unlinked (no variant): {len(unlinked)} sent, {len(unlinked_responses)} response(s).")
+            reports.append({
+                "variant": "unlinked",
+                "system_instruction": SYSTEM_INSTRUCTION,
+                "emails_sent": len(unlinked),
+                "responses_received": len(unlinked_responses),
+                "responses": [{"from": r.get("from"), "body": r.get("body")} for r in unlinked_responses],
+            })
+
+        report_json = json.dumps(reports, indent=2)
+
         review_prompt = f"""You are optimizing a cold email outreach system for ScaleMe.
 
-Yesterday's emails (last 24 hours):
-{history_summary}
+Here is the A/B performance data from the last 24 hours:
+{report_json}
 
-Based on these results, generate two distinct system instruction variants (A and B) for an AI SDR.
-Each should take a different angle or tone to enable A/B testing.
+Based on this data — what worked, what got responses, and what the responses said — generate two new improved system instruction variants (A and B) for an AI SDR.
+Each should take a different angle or tone to enable continued A/B testing.
 Both must instruct the AI to output JSON with the structure: {{"subject": "...", "body": "..."}}
 
 Output as JSON:
 {{"variant_a": "<full system instruction for A>", "variant_b": "<full system instruction for B>"}}"""
+
     else:
         log("No history found — generating cold-start A/B variants from default prompt...")
         review_prompt = f"""You are setting up a cold email outreach system for ScaleMe for the first time.
 
 Default system instruction:
-{default_instruction}
+{SYSTEM_INSTRUCTION}
 
 Generate two distinct system instruction variants (A and B) based on this default, each taking a different angle or tone for A/B testing.
 Both must instruct the AI to output JSON with the structure: {{"subject": "...", "body": "..."}}
@@ -110,12 +187,11 @@ Output as JSON:
 {{"variant_a": "<full system instruction for A>", "variant_b": "<full system instruction for B>"}}"""
 
     log("Calling LLM to generate Variant A and Variant B system instructions...")
-    response = query_llm(
+    variants = query_llm_with_retry(
         model=MODEL,
         system="You are an AI system optimizer. Output only valid JSON.",
         prompt=review_prompt,
     )
-    variants = json.loads(response[response.index('{'):response.rindex('}')+1])
     log("Variants generated successfully.")
     log(f"Variant A: {variants['variant_a'][:120]}...")
     log(f"Variant B: {variants['variant_b'][:120]}...")
@@ -152,14 +228,13 @@ Output as JSON:
         [(l, prompt_b_id, "B", variants["variant_b"]) for l in group_b]
     )
     for i, (lead, prompt_id, variant, system_instr) in enumerate(all_assignments):
-        scheduled_at = (now + timedelta(minutes=5 + i * interval)).isoformat()
+        scheduled_at = (now + timedelta(minutes=1 + i * interval)).isoformat()
         log(f"[{i+1}/{total}] Generating email for {lead['first_name']} {lead['last_name']} ({lead['company']}) — Variant {variant}...")
-        email_response = query_llm(
+        email_data = query_llm_with_retry(
             model=MODEL,
             system=system_instr,
             prompt=build_prompt(lead),
         )
-        email_data = json.loads(email_response[email_response.index('{'):email_response.rindex('}')+1])
         log(f"  Subject: {email_data['subject']}")
         log(f"  Scheduled at: {scheduled_at}")
         plan_rows.append((
@@ -184,12 +259,12 @@ Output as JSON:
     }
 
 
-def log_history(lead_id: int, receiver: str, subject: str, body: str, prompt: str):
+def log_history(lead_id: int, receiver: str, subject: str, body: str, prompt: str, message_id: str = "", prompt_id: int = None):
     from datetime import datetime, timezone
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute(
-        "INSERT INTO history (lead_id, receiver, subject, body, prompt, sent_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (lead_id, receiver, subject, body, prompt, datetime.now(timezone.utc).isoformat())
+        "INSERT INTO history (lead_id, prompt_id, receiver, subject, body, prompt, message_id, responses, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (lead_id, prompt_id, receiver, subject, body, prompt, message_id, "[]", datetime.now(timezone.utc).isoformat())
     )
     conn.commit()
     conn.close()
@@ -199,9 +274,9 @@ def send_message_to_random_lead():
     leads = leads_to_json()
     lead = leads[random.randint(0, len(leads) - 1)]
     subject, body, prompt = generate_email(lead)
-    receiver = "crstall2004@gmail.com"
-    send_email(receiver_email=receiver, subject=subject, content=body)
-    log_history(lead_id=lead["id"], receiver=receiver, subject=subject, body=body, prompt=prompt)
+    receiver = "slopeside-test@mailinator.com"
+    message_id = send_email(receiver_email=receiver, subject=subject, content=body)
+    log_history(lead_id=lead["id"], receiver=receiver, subject=subject, body=body, prompt=prompt, message_id=message_id)
     return lead, subject, body
 
 
@@ -217,10 +292,15 @@ def leads():
 
 @app.route("/history")
 def history():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM history ORDER BY sent_at DESC")
+    cursor.execute("""
+        SELECT h.*, l.first_name, l.last_name, l.company, l.title
+        FROM history h
+        LEFT JOIN leads l ON h.lead_id = l.id
+        ORDER BY h.sent_at DESC
+    """)
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return jsonify(rows)
@@ -228,10 +308,15 @@ def history():
 
 @app.route("/plan")
 def plan():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM plan ORDER BY scheduled_at ASC")
+    cursor.execute("""
+        SELECT p.*, l.first_name, l.last_name, l.company, l.title
+        FROM plan p
+        LEFT JOIN leads l ON p.lead_id = l.id
+        ORDER BY p.scheduled_at ASC
+    """)
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return jsonify(rows)
@@ -273,6 +358,96 @@ def review():
     return Response(stream_with_context(stream()), mimetype="text/event-stream")
 
 
+def execute_plan_row(plan_row: dict, conn, cursor):
+    """Send one plan row, log to history, and delete from plan. Shared by route and scheduler."""
+    cursor.execute("SELECT system_instruction FROM prompts WHERE id = ?", (plan_row["prompt_id"],))
+    prompt_row = cursor.fetchone()
+    system_instruction = prompt_row["system_instruction"] if prompt_row else SYSTEM_INSTRUCTION
+
+    cursor.execute("SELECT * FROM leads WHERE id = ?", (plan_row["lead_id"],))
+    lead = dict(cursor.fetchone())
+
+    full_prompt = build_prompt(lead)
+    receiver = "slopeside-test@mailinator.com"
+    message_id = send_email(receiver_email=receiver, subject=plan_row["subject"], content=plan_row["body"])
+
+    log_history(
+        lead_id=plan_row["lead_id"],
+        receiver=receiver,
+        subject=plan_row["subject"],
+        body=plan_row["body"],
+        prompt=f"[System]\n{system_instruction}\n\n[User]\n{full_prompt}",
+        message_id=message_id,
+        prompt_id=plan_row["prompt_id"],
+    )
+
+    cursor.execute("DELETE FROM plan WHERE id = ?", (plan_row["id"],))
+    conn.commit()
+
+
+def dispatch_scheduled_emails():
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM plan WHERE scheduled_at <= ? AND status = 'pending'",
+        (now,)
+    )
+    due = [dict(r) for r in cursor.fetchall()]
+    for plan_row in due:
+        try:
+            execute_plan_row(plan_row, conn, cursor)
+            print(f"[scheduler] Sent plan id={plan_row['id']} to {plan_row.get('lead_id')}")
+        except Exception as e:
+            print(f"[scheduler] Failed plan id={plan_row['id']}: {e}")
+    conn.close()
+
+
+@app.route("/send_plan/<int:plan_id>", methods=["POST"])
+def send_plan(plan_id):
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM plan WHERE id = ?", (plan_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"success": False, "error": "Plan row not found"}), 404
+
+        execute_plan_row(dict(row), conn, cursor)
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/reset_db", methods=["POST"])
+def reset_db():
+    try:
+        DB_PATH.unlink(missing_ok=True)
+        init_db()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/check_inbox", methods=["POST"])
+def check_inbox_route():
+    try:
+        result = check_inbox()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/intro")
+def intro():
+    return render_template("intro.html")
+
+
 @app.route("/send", methods=["POST"])
 def send():
     try:
@@ -283,4 +458,4 @@ def send():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", port=2001)
