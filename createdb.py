@@ -7,7 +7,8 @@ CSV_PATH = Path(__file__).with_name("leads.csv")
 
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -34,12 +35,16 @@ def init_db():
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             lead_id INTEGER,
+            prompt_id INTEGER,
             receiver TEXT,
             subject TEXT,
             body TEXT,
             prompt TEXT,
+            message_id TEXT,
+            responses TEXT DEFAULT '[]',
             sent_at TEXT,
-            FOREIGN KEY (lead_id) REFERENCES leads(id)
+            FOREIGN KEY (lead_id) REFERENCES leads(id),
+            FOREIGN KEY (prompt_id) REFERENCES prompts(id)
         )
     """)
 
